@@ -28,8 +28,19 @@
 # basic send command to run robot
 # will add telemetry later
 
+import sys
+#sys.path.append('/opt/ros/groovy/lib/python2.7/dist-packages')
+sys.path.append('../') # add path to up one level
+import rospy
 import robot_init
 from robot_init import *
+# from turner_commands import publish_data
+# import turner_commands.publish_data
+import sensor_msgs.msg
+smsg = sensor_msgs.msg.JointState()
+
+
+LEG_VELOCITY = 2.0 # maximum leg m/sec
 
 def setThrust(throttle0, throttle1, duration):
     thrust = [throttle0, throttle1, duration]
@@ -37,10 +48,81 @@ def setThrust(throttle0, throttle1, duration):
     print "cmdSetThrust " + str(thrust)
 
 
+# run legs in closed loop, with different number of left/right steps
+
+def setThrustClosedLoop(leftTime,rightTime):
+    thrust = [throttle[0], leftTime, throttle[1], rightTime, 0]
+    xb_send(0, command.SET_THRUST_CLOSED_LOOP, pack('5h',*thrust))
+#    print "Throttle[0,1] = ",throttle[0],throttle[1],\
+#          "left", leftTime,"right", rightTime
+
+# get one packet of PID data from robot
+def getPIDdata():
+    from turner_commands import publish_data
+    count = 0
+    shared.pkts = 0   # reset packet count
+    dummy_data = [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
+    # data format '=LLll'+13*'h' 
+    shared.imudata = [] #reset stored data
+    xb_send(0, command.GET_PID_TELEMETRY, pack('h',0))
+    time.sleep(0.075)   # 10 Hz, faster could choke Basestation
+    while shared.pkts == 0:
+        print "Retry after 0.1 seconds. Got only %d packets" %shared.pkts
+        time.sleep(0.1)
+        xb_send(0, command.GET_PID_TELEMETRY, pack('h',0))
+        count = count + 1
+        if count > 5:
+            print 'Killed SendCommand. No return packet.'
+            rospy.signal_shutdown('Killed node. No return packet!')
+            shared.imudata.append(dummy_data) # use dummy data
+            break   
+    data = shared.imudata[0]  # convert string list to numbers
+#    publish_data(data) # in top level module 
+    return data
+
+  #  print 'index =', data[0]
+  #  print 'time = ', data[1]    # time is in microseconds
+  #  print 'mpos=', data[2:4]
+  #  print 'pwm=',data[4:6]
+  #  print 'imu=',data[6:13]
+  #  print 'emf=',data[13:16]
+ 
+
 # execute move command
+# initial - 2 steps straight, 2L+1R for right turn, 1L+2R for left turn
+# discrete approximation V_R = V_n + \omega / 2
+# V_L = V_n - \omega / 2
+# initial calculation assuming no slip - times in milliseconds
+def proceed(vel, turn_rate):
+    leftTime = int(4*cycle * (vel - turn_rate/2) / LEG_VELOCITY)
+    rightTime = int(4 * cycle * (vel + turn_rate/2) / LEG_VELOCITY)
+
+    # probably should normalize, but can at least bound leg run time
+    leftTime=max(0,leftTime)
+    leftTime=min(4*cycle,leftTime)
+    rightTime=max(0,rightTime)
+    rightTime=min(4*cycle,rightTime)
+
+    print 'setting run time left=%d  right=%d' %(leftTime, rightTime)
+    getPIDdata()
+    data = shared.imudata[0]
+    currentTime = time.time()   # time in seconds, floating point
+    endTime = currentTime + (4.0*cycle)/1000.0 # 4 stride motion segments
+    setThrustClosedLoop(leftTime, rightTime)
+# get telemetry data while closed loop is running
+# can't trust robot time - need to have python timer as well
+#    print 'currentTime = %f, endTime = %f' %(currentTime, endTime)
+    while(currentTime < endTime):
+#       time.sleep(0.1) # sample data every 0.1 sec
+        getPIDdata()  # delay is in getPIDdata()
+        data = shared.imudata[0]
+        currentTime = time.time()  # time in milliseconds
+        print 'index =', data[0],'currentTime=',data[1]/1000
+   
+
 count = 300 # 300 Hz sampling in steering = 1 sec
 
-def proceed():
+def proceed1():
     global duration, count, delay, throttle
     thrust = [throttle[0], duration, throttle[1], duration, 0]
     if telemetry:

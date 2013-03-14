@@ -41,6 +41,7 @@ from xbee import XBee
 import serial
 from callbackFunc import xbee_received
 import shared
+# from shared import robot_ready
 
 DEST_ADDR = '\x20\x52'
 imudata_file_name = 'imudata.txt'
@@ -58,18 +59,17 @@ RESET_ROBOT = False
 # now uses back emf velocity as d term
 #motorgains = [300,0,10,0,50, 300,0,10,0,50]
 # try just left motor
-motorgains = [400,0,400,0,0, 400,0,400,0,0]
+motorgains = [600,200,400,0,0, 600,200,400,0,0]
 throttle = [0,0]
-duration = 512  # length of run
-cycle = 512 # ms for a leg cycle
+duration = [200,200]  # length of run
+cycle = 100 # ms for a leg cycle
 # velocity profile
 # [time intervals for setpoints]
 # [position increments at set points]
 # [velocity increments]   
 delta = [0x4000,0x4000,0x4000,0x4000]  # adds up to 65536 (2 pi)
-intervals = [128, 128, 128, 128]  # total 512 ms
-vel = [128, 128,128,128]  # = delta/interval
-
+intervals = [50, 50, 50, 50]  # total 200 ms
+vel = [327, 327,327,327]  # = delta/interval
 
 ser = serial.Serial(shared.BS_COMPORT, shared.BS_BAUDRATE,timeout=3, rtscts=0)
 xb = XBee(ser, callback = xbee_received)
@@ -84,18 +84,22 @@ def resetRobot():
 
         
 #set velocity profile
+# invert profile for motor 0 for VelociRoACH kinematics
 def setVelProfile():
     global intervals, vel
     print "Sending velocity profile"
     print "set points [encoder values]", delta
     print "intervals (ms)",intervals
     print "velocities (delta per ms)",vel
-    temp = intervals+delta+vel
-    temp = temp+temp  # left = right
+    temp0 = intervals + map(invert,delta) + map(invert,vel) # invert 0
+    temp1 = intervals+delta+vel
+    temp = temp0 + temp1  # left = right
     xb_send(0, command.SET_VEL_PROFILE, pack('24h',*temp))
     time.sleep(1)
     
 
+def invert(x):
+    return (-x)
 
 # set robot control gains
 def setGain():
@@ -144,8 +148,8 @@ def robot_init():
     xb_send(0, command.ZERO_POS,  "Zero motor")
     print 'read motorpos and zero'
     print "Done Initializing"
-    
-                
+    shared.robot_ready = True
+    return True
         
         
 
