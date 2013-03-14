@@ -1,0 +1,10 @@
+<launch>
+		<!--
+    <node name="turner_teleop" pkg="Turner25" type="turner_teleop.py" output="screen" />
+    	-->
+    <node name="turtlebot_teleop_key" pkg="turtlebot_teleop" type="turtlebot_teleop_key" output="screen">
+    	<remap from="~cmd_vel" to="/Turner25/cmd_vel"/>
+    </node>
+
+</launch>
+

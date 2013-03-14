@@ -13,6 +13,7 @@
   <depend package="roscpp"/>
   <depend package="turtlesim"/>
   <depend package="tf"/>
+  <depend package="geometry_msgs"/>
 </package>
 
 
